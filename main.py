@@ -13,7 +13,6 @@ import sys
 
 # ─── Configuration & Persistence ──────────────────────────────────────────
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -24,7 +23,9 @@ class SettingsManager:
     FILE_PATH = "settings.json"
     DEFAULTS = {
         "ffmpeg_path": r"C:\Users\srika\FFMeg\ffmpeg-8.0.1-essentials_build\ffmpeg-8.0.1-essentials_build\bin\ffmpeg.exe",
-        "ffprobe_path": r"C:\Users\srika\FFMeg\ffmpeg-8.0.1-essentials_build\ffmpeg-8.0.1-essentials_build\bin\ffprobe.exe"
+        "ffprobe_path": r"C:\Users\srika\FFMeg\ffmpeg-8.0.1-essentials_build\ffmpeg-8.0.1-essentials_build\bin\ffprobe.exe",
+        "auto_open": True,
+        "history": []
     }
 
     @classmethod
@@ -43,15 +44,15 @@ class SettingsManager:
 
 # ─── Theme ──────────────────────────────────────────────────────────────────
 class Theme:
-    ACCENT      = "#6366F1"  # Indigo 500
-    ACCENT_HOVER = "#4F46E5" # Indigo 600
-    SUCCESS     = "#10B981"  # Emerald 500
-    ERROR       = "#EF4444"  # Red 500
-    BG_DARK     = "#0F172A"  # Slate 900
-    PANEL_BG    = "#1E293B"  # Slate 800
-    CARD_BG     = "#334155"  # Slate 700
-    TEXT_MAIN   = "#F8FAFC"  # Slate 50
-    TEXT_DIM    = "#94A3B8"  # Slate 400
+    ACCENT      = "#6366F1"
+    ACCENT_HOVER = "#4F46E5"
+    SUCCESS     = "#10B981"
+    ERROR       = "#EF4444"
+    BG_DARK     = "#0F172A"
+    PANEL_BG    = "#1E293B"
+    CARD_BG     = "#334155"
+    TEXT_MAIN   = "#F8FAFC"
+    TEXT_DIM    = "#94A3B8"
 
 # ─── FFmpeg Support ────────────────────────────────────────────────────────
 class FFmpegManager:
@@ -78,6 +79,53 @@ class FFmpegManager:
             dur = float(data["format"].get("duration", 0))
             return {"w": v["width"], "h": v["height"], "fps": v["r_frame_rate"], "dur": dur}
         except: return None
+
+# ─── View: Welcome / Home ───────────────────────────────────────────────────
+class HomeView(ctk.CTkFrame):
+    def __init__(self, master, app):
+        super().__init__(master, fg_color="transparent")
+        self.app = app
+        self._init_ui()
+
+    def _init_ui(self):
+        self.grid_columnconfigure(0, weight=1)
+        
+        # Hero Section
+        hero = ctk.CTkFrame(self, fg_color=Theme.PANEL_BG, corner_radius=20)
+        hero.pack(fill="x", padx=40, pady=(40, 20))
+        
+        ctk.CTkLabel(hero, text="Welcome to AIVerseStudio", font=ctk.CTkFont(size=28, weight="bold")).pack(pady=(30, 5))
+        ctk.CTkLabel(hero, text="Your all-in-one cinematic production toolkit", text_color=Theme.TEXT_DIM, font=ctk.CTkFont(size=14)).pack(pady=(0, 30))
+
+        # System Status
+        status_f = ctk.CTkFrame(hero, fg_color=Theme.BG_DARK, corner_radius=12)
+        status_f.pack(padx=30, pady=(0, 30), fill="x")
+        
+        ff_ok = FFmpegManager.get_ffmpeg() is not None
+        ff_color = Theme.SUCCESS if ff_ok else Theme.ERROR
+        ff_text = "FFmpeg: ONLINE" if ff_ok else "FFmpeg: NOT DETECTED"
+        
+        ctk.CTkLabel(status_f, text=ff_text, text_color=ff_color, font=ctk.CTkFont(size=11, weight="bold")).pack(side="left", padx=20, pady=10)
+        
+        # Quick Actions
+        actions = ctk.CTkFrame(self, fg_color="transparent")
+        actions.pack(fill="x", padx=40, pady=20)
+        actions.grid_columnconfigure((0,1,2), weight=1)
+
+        self._action_card(actions, "⚡", "Single Extract", "Best for precision", lambda: self.app.switch_tab("extract"), 0)
+        self._action_card(actions, "📦", "Batch Suite", "Process directories", lambda: self.app.switch_tab("batch"), 1)
+        self._action_card(actions, "🎞️", "Storyboard", "Cinema Strips", lambda: self.app.switch_tab("story"), 2)
+
+    def _action_card(self, master, icon, title, sub, cmd, col):
+        card = ctk.CTkFrame(master, fg_color=Theme.PANEL_BG, corner_radius=15, height=180)
+        card.grid(row=0, column=col, padx=10, sticky="nsew")
+        card.grid_propagate(False)
+        
+        ctk.CTkLabel(card, text=icon, font=ctk.CTkFont(size=32)).pack(pady=(25, 5))
+        ctk.CTkLabel(card, text=title, font=ctk.CTkFont(size=15, weight="bold")).pack()
+        ctk.CTkLabel(card, text=sub, font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM).pack(pady=(2, 15))
+        
+        ctk.CTkButton(card, text="Open Tool", height=32, fg_color=Theme.CARD_BG, hover_color=Theme.ACCENT, command=cmd).pack(pady=(0, 20), padx=20, fill="x")
 
 # ─── View: Single Frame Extractor ──────────────────────────────────────────
 class SingleFrameView(ctk.CTkFrame):
@@ -185,11 +233,15 @@ class SingleFrameView(ctk.CTkFrame):
         self.extract_btn.configure(state="normal", text="⚡ Extract Last Frame")
         self.prog.set(1.0)
         self.status.configure(text=f"✅ Saved to folder", text_color=Theme.SUCCESS)
+        
         img = Image.open(out)
         img.thumbnail((600, 400))
         ctk_img = ctk.CTkImage(img, size=(img.width, img.height))
         self.pre_lbl.configure(image=ctk_img, text="")
         self.pre_lbl.image = ctk_img
+        
+        if SettingsManager.load().get("auto_open"):
+            os.startfile(os.path.dirname(out))
 
 # ─── View: Batch Extractor ────────────────────────────────────────────────
 class BatchView(ctk.CTkFrame):
@@ -221,12 +273,10 @@ class BatchView(ctk.CTkFrame):
         
         ctk.CTkButton(input_f, text="📂 Select Folder", width=140, fg_color=Theme.ACCENT, command=self.select_dir).pack(side="right", padx=20)
 
-        # Log Area
         self.log_box = ctk.CTkTextbox(main, fg_color=Theme.PANEL_BG, corner_radius=12, text_color=Theme.TEXT_DIM, font=ctk.CTkFont(size=11))
         self.log_box.grid(row=1, column=0, sticky="nsew")
         self.log_box.insert("0.0", ">>> Batch logs will appear here...\n")
 
-        # Start
         self.start_btn = ctk.CTkButton(self, text="🚀 START BATCH PROCESS", height=55, fg_color=Theme.SUCCESS, font=ctk.CTkFont(weight="bold"), state="disabled", command=self.start_batch)
         self.start_btn.grid(row=2, column=0, sticky="ew", padx=20, pady=20)
 
@@ -244,29 +294,27 @@ class BatchView(ctk.CTkFrame):
     def _run_batch(self):
         ff = FFmpegManager.get_ffmpeg()
         files = [f for f in os.listdir(self.dir) if f.lower().endswith(('.mp4', '.mkv', '.mov', '.avi'))]
-        
         self.log_box.insert("end", f"\n[Found {len(files)} videos. Beginning extraction...]\n")
         
         for i, filename in enumerate(files):
             path = os.path.join(self.dir, filename)
             self.log_box.insert("end", f"> Processing: {filename}...")
-            
             info = FFmpegManager.probe_video(path)
             if info:
                 folder = os.path.join(self.dir, "AIVerse_Batch_Output")
                 os.makedirs(folder, exist_ok=True)
                 out = os.path.join(folder, f"{os.path.splitext(filename)[0]}_LastFrame.png")
-                
                 cmd = [ff, "-y", "-ss", str(max(0, info['dur']-1)), "-i", path, "-update", "1", "-vframes", "1", out]
                 subprocess.run(cmd, capture_output=True)
                 self.log_box.insert("end", " DONE\n")
             else:
-                self.log_box.insert("end", " FAILED (Probe)\n")
-            
+                self.log_box.insert("end", " FAILED\n")
             self.log_box.see("end")
 
         self.log_box.insert("end", "\n[BATCH PROCESS COMPLETE]\n")
         self.after(0, lambda: self.start_btn.configure(state="normal", text="🚀 START BATCH PROCESS"))
+        if SettingsManager.load().get("auto_open"):
+            os.startfile(os.path.join(self.dir, "AIVerse_Batch_Output"))
 
 # ─── View: Storyboard ─────────────────────────────────────────────────────
 class StoryboardView(ctk.CTkFrame):
@@ -317,11 +365,8 @@ class StoryboardView(ctk.CTkFrame):
 
         folder = os.path.join(os.path.dirname(self.video_path), "AIVerse_Storyboards")
         os.makedirs(folder, exist_ok=True)
-        
-        # Extract 3 timestamps: 10%, 50%, 90%
         times = [info['dur']*0.1, info['dur']*0.5, info['dur']*0.9]
         frames = []
-        
         for i, t in enumerate(times):
             tmp = os.path.join(folder, f"tmp_{i}.png")
             cmd = [ff, "-y", "-ss", str(t), "-i", self.video_path, "-vframes", "1", tmp]
@@ -329,23 +374,17 @@ class StoryboardView(ctk.CTkFrame):
             if os.path.exists(tmp): frames.append(tmp)
 
         if len(frames) == 3:
-            # Combine images with PIL
             imgs = [Image.open(f) for f in frames]
             total_w = sum(img.width for img in imgs)
             max_h = max(img.height for img in imgs)
-            
             story = Image.new('RGB', (total_w, max_h))
             x = 0
             for img in imgs:
                 story.paste(img, (x, 0))
                 x += img.width
-            
             out_path = os.path.join(folder, f"{os.path.splitext(os.path.basename(self.video_path))[0]}_Storyboard.png")
             story.save(out_path)
-            
-            # Clean up temps
             for f in frames: os.remove(f)
-            
             self.after(0, lambda: self._on_done(out_path))
 
     def _on_done(self, out):
@@ -355,18 +394,19 @@ class StoryboardView(ctk.CTkFrame):
         ctk_img = ctk.CTkImage(img, size=(img.width, img.height))
         self.pre_lbl.configure(image=ctk_img, text="")
         self.pre_lbl.image = ctk_img
+        if SettingsManager.load().get("auto_open"):
+            os.startfile(os.path.dirname(out))
 
 # ─── Main Application ──────────────────────────────────────────────────────
 class AIVerseStudio(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("AIVerseStudio - Suite")
+        self.title("AIVerseStudio - Creative Suite")
         self.geometry("1300x850")
         self.configure(fg_color=Theme.BG_DARK)
-
         self.current_view = None
         self._init_ui()
-        self.switch_tab("extract")
+        self.switch_tab("home")
 
     def _init_ui(self):
         self.grid_columnconfigure(0, weight=0)
@@ -381,15 +421,16 @@ class AIVerseStudio(ctk.CTk):
         header.pack(fill="x", pady=30, padx=20)
         ctk.CTkLabel(header, text="🌌", font=ctk.CTkFont(size=40)).pack()
         ctk.CTkLabel(header, text="AIVerseStudio", font=ctk.CTkFont(size=20, weight="bold")).pack()
-        ctk.CTkLabel(header, text="Creative Suite v2.0", font=ctk.CTkFont(size=10), text_color=Theme.TEXT_DIM).pack()
+        ctk.CTkLabel(header, text="Powering Visual Creation", font=ctk.CTkFont(size=10), text_color=Theme.TEXT_DIM).pack()
 
         self.btns = {}
+        self._nav_btn("home", "🏠  Dashboard", "home")
         self._nav_btn("extract", "⚡  Single Extract", "extract")
         self._nav_btn("batch", "📦  Batch Suite", "batch")
         self._nav_btn("story", "🎞️  Storyboard", "story")
         
         ctk.CTkFrame(self.nav, fg_color="transparent", height=100).pack(fill="y", expand=True)
-        self._nav_btn("settings", "⚙️  Global Settings", "settings")
+        self._nav_btn("settings", "⚙️  Preferences", "settings")
 
         self.container = ctk.CTkFrame(self, fg_color="transparent")
         self.container.grid(row=0, column=1, sticky="nsew")
@@ -408,7 +449,10 @@ class AIVerseStudio(ctk.CTk):
         if self.current_view: self.current_view.destroy()
         for k, v in self.btns.items(): v.configure(fg_color="transparent", text_color=Theme.TEXT_DIM)
         
-        if tab == "extract":
+        if tab == "home":
+            self.current_view = HomeView(self.container, self)
+            self.btns["home"].configure(fg_color=Theme.ACCENT, text_color="white")
+        elif tab == "extract":
             self.current_view = SingleFrameView(self.container, self)
             self.btns["extract"].configure(fg_color=Theme.ACCENT, text_color="white")
         elif tab == "batch":
@@ -424,26 +468,38 @@ class AIVerseStudio(ctk.CTk):
 
     def show_settings(self):
         win = ctk.CTkToplevel(self)
-        win.title("Global Settings")
-        win.geometry("500x450")
+        win.title("Preferences")
+        win.geometry("540x550")
         win.configure(fg_color=Theme.BG_DARK)
         win.transient(self); win.grab_set()
 
-        ctk.CTkLabel(win, text="⚙️ Preferences", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=20)
+        ctk.CTkLabel(win, text="⚙️ App Preferences", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=20)
         s = SettingsManager.load()
-        f_ent = self._st_row(win, "FFmpeg Path", s["ffmpeg_path"])
-        p_ent = self._st_row(win, "FFprobe Path", s["ffprobe_path"])
+        
+        container = ctk.CTkFrame(win, fg_color=Theme.PANEL_BG, corner_radius=15)
+        container.pack(fill="both", expand=True, padx=30, pady=(0, 20))
+
+        f_ent = self._st_row(container, "FFmpeg Path", s["ffmpeg_path"])
+        p_ent = self._st_row(container, "FFprobe Path", s["ffprobe_path"])
+
+        # Auto-open toggle
+        auto_var = tk.BooleanVar(value=s.get("auto_open", True))
+        ctk.CTkCheckBox(container, text="Automatically open folder after extraction", variable=auto_var, font=ctk.CTkFont(size=12), text_color=Theme.TEXT_DIM, border_color=Theme.ACCENT).pack(anchor="w", padx=30, pady=20)
 
         def save():
-            SettingsManager.save({"ffmpeg_path": f_ent.get(), "ffprobe_path": p_ent.get()})
+            SettingsManager.save({
+                "ffmpeg_path": f_ent.get(), 
+                "ffprobe_path": p_ent.get(),
+                "auto_open": auto_var.get()
+            })
             win.destroy()
-        ctk.CTkButton(win, text="Save Changes", fg_color=Theme.ACCENT, command=save).pack(pady=20)
+        ctk.CTkButton(win, text="💾 Save Preferences", height=45, fg_color=Theme.ACCENT, command=save).pack(pady=(0,30))
 
-    def _st_row(self, win, lbl, val):
-        f = ctk.CTkFrame(win, fg_color="transparent")
+    def _st_row(self, master, lbl, val):
+        f = ctk.CTkFrame(master, fg_color="transparent")
         f.pack(fill="x", padx=30, pady=10)
-        ctk.CTkLabel(f, text=lbl, text_color=Theme.TEXT_DIM).pack(anchor="w")
-        e = ctk.CTkEntry(f, width=400, fg_color=Theme.PANEL_BG)
+        ctk.CTkLabel(f, text=lbl, text_color=Theme.TEXT_DIM, font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w")
+        e = ctk.CTkEntry(f, width=400, fg_color=Theme.BG_DARK)
         e.insert(0, val); e.pack(pady=5)
         return e
 

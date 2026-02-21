@@ -26,7 +26,8 @@ class SettingsManager:
         "ffprobe_path": r"C:\Users\srika\FFMeg\ffmpeg-8.0.1-essentials_build\ffmpeg-8.0.1-essentials_build\bin\ffprobe.exe",
         "auto_open": True,
         "studio_sharp": True,
-        "skip_black": True
+        "skip_black": True,
+        "sidebar_locked": True
     }
 
     @classmethod
@@ -80,6 +81,34 @@ class FFmpegManager:
             dur = float(data["format"].get("duration", 0))
             return {"w": v["width"], "h": v["height"], "fps": v["r_frame_rate"], "dur": dur}
         except: return None
+
+# ─── Global Component: Fullscreen Viewer ─────────────────────────────────────
+class FullscreenViewer(ctk.CTkToplevel):
+    def __init__(self, master, image_path):
+        super().__init__(master)
+        self.title("AIVerse Cinema View")
+        self.attributes("-fullscreen", True)
+        self.configure(fg_color="black")
+        
+        # Close on Escape
+        self.bind("<Escape>", lambda e: self.destroy())
+        
+        # Image
+        img = Image.open(image_path)
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        
+        # Scale to fit while maintaining aspect
+        img.thumbnail((screen_w, screen_h))
+        ctk_img = ctk.CTkImage(img, size=(img.width, img.height))
+        
+        lbl = ctk.CTkLabel(self, image=ctk_img, text="")
+        lbl.place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Close Button
+        ctk.CTkButton(self, text="✕ Close (Esc)", width=120, height=40, 
+                      fg_color="#333", hover_color=Theme.ERROR,
+                      command=self.destroy).place(relx=0.98, rely=0.02, anchor="ne")
 
 # ─── View: Welcome / Home ───────────────────────────────────────────────────
 class HomeView(ctk.CTkFrame):
@@ -142,13 +171,11 @@ class SingleFrameView(ctk.CTkFrame):
         self.lbl_file = self._label(self.info_card, "📄 No video selected")
         self.lbl_res  = self._label(self.info_card, "📐 Res: --")
         
-        # Format Selection
         ctk.CTkLabel(ctrl, text="Quality Format", font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM).pack(anchor="w", padx=25, pady=(10, 0))
         self.fmt_var = ctk.StringVar(value="PNG (Lossless)")
         self.fmt_menu = ctk.CTkOptionMenu(ctrl, variable=self.fmt_var, values=["PNG (Lossless)", "JPEG (High)", "BMP"], fg_color=Theme.CARD_BG)
         self.fmt_menu.pack(fill="x", padx=20, pady=(2, 10))
 
-        # Power Toggles
         self.ai_card = ctk.CTkFrame(ctrl, fg_color="transparent")
         self.ai_card.pack(fill="x", padx=20, pady=5)
         
@@ -159,7 +186,6 @@ class SingleFrameView(ctk.CTkFrame):
         self.sharp_var = tk.BooleanVar(value=s.get("studio_sharp", True))
         ctk.CTkCheckBox(self.ai_card, text="Studio Grade Sharper", variable=self.sharp_var, font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM, border_color=Theme.ACCENT).pack(anchor="w", pady=2)
 
-        # Actions
         self.scrub_btn = ctk.CTkButton(ctrl, text="🎞️ Open Timeline Scrubber", height=40, fg_color=Theme.CARD_BG, state="disabled", command=self.open_scrubber)
         self.scrub_btn.pack(fill="x", padx=20, pady=(10, 5))
 
@@ -168,10 +194,13 @@ class SingleFrameView(ctk.CTkFrame):
         
         self.prog = ctk.CTkProgressBar(ctrl, height=8, fg_color=Theme.BG_DARK); self.prog.pack(fill="x", padx=20, pady=5); self.prog.set(0)
 
-        # Preview
         self.preview_box = ctk.CTkFrame(content, fg_color=Theme.PANEL_BG, corner_radius=15)
         self.preview_box.grid(row=0, column=1, sticky="nsew"); self.preview_box.grid_rowconfigure(0, weight=1); self.preview_box.grid_columnconfigure(0, weight=1)
-        self.pre_lbl = ctk.CTkLabel(self.preview_box, text="Preview Area", font=ctk.CTkFont(size=14), text_color=Theme.CARD_BG); self.pre_lbl.grid(row=0, column=0)
+        
+        # Clickable Preview Label
+        self.pre_lbl = ctk.CTkLabel(self.preview_box, text="Preview Area", font=ctk.CTkFont(size=14), text_color=Theme.CARD_BG)
+        self.pre_lbl.grid(row=0, column=0)
+        self.pre_lbl.bind("<Button-1>", lambda e: self.show_fullscreen())
 
         bot = ctk.CTkFrame(self, height=40, fg_color="transparent")
         bot.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 20))
@@ -196,60 +225,45 @@ class SingleFrameView(ctk.CTkFrame):
         self.extract_btn.configure(state="normal"); self.scrub_btn.configure(state="normal")
         self.status.configure(text="✅ Video Loaded", text_color=Theme.SUCCESS)
 
+    def show_fullscreen(self):
+        if self.output_path and os.path.exists(self.output_path):
+            FullscreenViewer(self.app, self.output_path)
+
     def open_scrubber(self):
-        """Extracts last 10 frames and shows a choice window."""
         win = ctk.CTkToplevel(self); win.title("AIVerse Timeline Scrubber"); win.geometry("1100x400")
         win.configure(fg_color=Theme.BG_DARK); win.transient(self); win.grab_set()
-        
         ctk.CTkLabel(win, text="Timeline Scrubber - Select the Perfect Frame", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=15)
         scroll = ctk.CTkScrollableFrame(win, orientation="horizontal", fg_color=Theme.PANEL_BG, height=280)
         scroll.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        msg = ctk.CTkLabel(scroll, text="Decoding terminal frames... Please wait.", text_color=Theme.TEXT_DIM)
-        msg.pack(pady=100)
+        msg = ctk.CTkLabel(scroll, text="Decoding terminal frames... Please wait.", text_color=Theme.TEXT_DIM); msg.pack(pady=100)
 
         def decode():
             ff = FFmpegManager.get_ffmpeg(); folder = os.path.join(os.path.abspath("."), "tmp_scrubber")
             if os.path.exists(folder): shutil.rmtree(folder)
             os.makedirs(folder)
-            
-            # Extract last 10 frames at 2fps
             cmd = [ff, "-y", "-sseof", "-5", "-i", self.video_path, "-r", "2", "-vframes", "10", os.path.join(folder, "frame_%03d.jpg")]
             subprocess.run(cmd, capture_output=True)
-            
             imgs = sorted([f for f in os.listdir(folder) if f.endswith(".jpg")])
             self.after(0, lambda: self._show_scrub_results(scroll, folder, imgs, win, msg))
-
         threading.Thread(target=decode, daemon=True).start()
 
     def _show_scrub_results(self, scroll, folder, files, win, msg):
         msg.destroy()
         for f in files:
-            path = os.path.join(folder, f)
-            img = Image.open(path); img.thumbnail((180, 120))
+            path = os.path.join(folder, f); img = Image.open(path); img.thumbnail((180, 120))
             ctk_img = ctk.CTkImage(img, size=(img.width, img.height))
-            
-            f_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-            f_frame.pack(side="left", padx=10)
-            
+            f_frame = ctk.CTkFrame(scroll, fg_color="transparent"); f_frame.pack(side="left", padx=10)
             btn = ctk.CTkButton(f_frame, image=ctk_img, text="", width=180, height=120, fg_color=Theme.CARD_BG,
                                 command=lambda p=path: self._select_scrub_frame(p, win))
-            btn.pack()
-            ctk.CTkLabel(f_frame, text=f"Frame {f.split('_')[1].split('.')[0]}", font=ctk.CTkFont(size=10), text_color=Theme.TEXT_DIM).pack(pady=2)
+            btn.pack(); ctk.CTkLabel(f_frame, text=f"Frame {f.split('_')[1].split('.')[0]}", font=ctk.CTkFont(size=10), text_color=Theme.TEXT_DIM).pack(pady=2)
 
     def _select_scrub_frame(self, path, win):
-        # Create final folder and move
         folder = os.path.join(os.path.dirname(self.video_path), f"{os.path.splitext(os.path.basename(self.video_path))[0]}_Frames")
-        os.makedirs(folder, exist_ok=True)
-        final = os.path.join(folder, f"SelectedFrame_{int(time.time())}.png")
-        
+        os.makedirs(folder, exist_ok=True); final = os.path.join(folder, f"SelectedFrame_{int(time.time())}.png")
         img = Image.open(path)
         if self.sharp_var.get():
-            img = ImageEnhance.Sharpness(img).enhance(1.5)
-            img = ImageEnhance.Contrast(img).enhance(1.1)
-        img.save(final)
-        
-        win.destroy(); self._on_done(final)
+            img = ImageEnhance.Sharpness(img).enhance(1.5); img = ImageEnhance.Contrast(img).enhance(1.1)
+        img.save(final); win.destroy(); self.output_path = final; self._on_done(final)
 
     def extract(self):
         self.extract_btn.configure(state="disabled", text="⏳ ...")
@@ -257,38 +271,25 @@ class SingleFrameView(ctk.CTkFrame):
 
     def _run_ffmpeg(self):
         try:
-            ff = FFmpegManager.get_ffmpeg()
-            ext = ".png" if "PNG" in self.fmt_var.get() else ".jpg"
+            ff = FFmpegManager.get_ffmpeg(); ext = ".png" if "PNG" in self.fmt_var.get() else ".jpg"
             folder = os.path.join(os.path.dirname(self.video_path), f"{os.path.splitext(os.path.basename(self.video_path))[0]}_Frames")
-            os.makedirs(folder, exist_ok=True)
-            out = os.path.join(folder, f"LastFrame_{int(time.time())}{ext}")
-            
-            # Optimized targeted seek for speed and reliability
-            # Even for "True-Shot", we start at the end and seek precisely
+            os.makedirs(folder, exist_ok=True); out = os.path.join(folder, f"LastFrame_{int(time.time())}{ext}")
             seek_point = max(0, self.video_info['dur'] - 0.5) 
-            
             cmd = [ff, "-y", "-ss", str(seek_point), "-i", self.video_path, "-vframes", "1", out]
             result = subprocess.run(cmd, capture_output=True, text=True)
-            
             if os.path.exists(out):
                 if self.sharp_var.get():
                     with Image.open(out) as img:
-                        enhanced = ImageEnhance.Sharpness(img).enhance(1.6)
-                        enhanced = ImageEnhance.Contrast(enhanced).enhance(1.05)
-                        enhanced.save(out)
-                self.output_path = out
-                self.after(0, lambda: self._on_done(out))
-            else:
-                error_msg = result.stderr if result.stderr else "Unknown FFmpeg error"
-                self.after(0, lambda: self.status.configure(text="❌ Extraction Failed", text_color=Theme.ERROR))
-                print(f"Extraction Error: {error_msg}")
+                        enhanced = ImageEnhance.Sharpness(img).enhance(1.6); enhanced = ImageEnhance.Contrast(enhanced).enhance(1.05); enhanced.save(out)
+                self.output_path = out; self.after(0, lambda: self._on_done(out))
+            else: self.after(0, lambda: self.status.configure(text="❌ Extraction Failed", text_color=Theme.ERROR))
         except Exception as e:
             self.after(0, lambda: self.status.configure(text=f"❌ Error: {str(e)}", text_color=Theme.ERROR))
             self.after(0, lambda: self.extract_btn.configure(state="normal", text="⚡ Extract Last Frame"))
 
     def _on_done(self, out):
         self.extract_btn.configure(state="normal", text="⚡ Extract Last Frame"); self.prog.set(1.0)
-        self.status.configure(text=f"✅ Saved & Enhanced", text_color=Theme.SUCCESS)
+        self.status.configure(text=f"✅ Saved & Enhanced (Click to zoom)", text_color=Theme.SUCCESS)
         img = Image.open(out); img.thumbnail((600, 400)); ctk_img = ctk.CTkImage(img, size=(img.width, img.height))
         self.pre_lbl.configure(image=ctk_img, text=""); self.pre_lbl.image = ctk_img
         if SettingsManager.load().get("auto_open"): os.startfile(os.path.dirname(out))
@@ -340,114 +341,63 @@ class BatchView(ctk.CTkFrame):
 # ─── View: Storyboard ─────────────────────────────────────────────────────
 class StoryboardView(ctk.CTkFrame):
     def __init__(self, master, app):
-        super().__init__(master, fg_color="transparent")
-        self.video_path = None
-        self.frames_data = [] # List of {path, label, time}
-        self._init_ui()
+        super().__init__(master, fg_color="transparent"); self.video_path = None; self.frames_data = []; self._init_ui()
 
     def _init_ui(self):
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
-
+        self.grid_columnconfigure(0, weight=1); self.grid_rowconfigure(1, weight=1)
         banner = ctk.CTkFrame(self, fg_color=Theme.PANEL_BG, corner_radius=15, height=100)
         banner.grid(row=0, column=0, sticky="ew", padx=20, pady=20)
         ctk.CTkLabel(banner, text="🎞️ CINEMATIC STORYBOARD", font=ctk.CTkFont(size=14, weight="bold"), text_color=Theme.ACCENT).pack(pady=(15, 0))
         ctk.CTkLabel(banner, text="Extract and Download individual First, Middle, or Last frames", font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM).pack()
-
-        # Workspace for frames
         self.work_area = ctk.CTkScrollableFrame(self, fg_color=Theme.PANEL_BG, corner_radius=15)
         self.work_area.grid(row=1, column=0, sticky="nsew", padx=20)
-        
-        self.placeholder = ctk.CTkLabel(self.work_area, text="Select a video to generate shots", text_color=Theme.CARD_BG)
-        self.placeholder.pack(pady=100)
-
-        ctrls = ctk.CTkFrame(self, fg_color="transparent")
-        ctrls.grid(row=2, column=0, sticky="ew", padx=20, pady=20)
-        
+        self.placeholder = ctk.CTkLabel(self.work_area, text="Select a video to generate shots", text_color=Theme.CARD_BG); self.placeholder.pack(pady=100)
+        ctrls = ctk.CTkFrame(self, fg_color="transparent"); ctrls.grid(row=2, column=0, sticky="ew", padx=20, pady=20)
         ctk.CTkButton(ctrls, text="📂 Select Video", command=self.select_video, fg_color=Theme.CARD_BG).pack(side="left", padx=10)
-        self.gen_btn = ctk.CTkButton(ctrls, text="🎨 Generate All Frames", fg_color=Theme.SUCCESS, state="disabled", command=self.generate)
-        self.gen_btn.pack(side="right", padx=10)
+        self.gen_btn = ctk.CTkButton(ctrls, text="🎨 Generate All Frames", fg_color=Theme.SUCCESS, state="disabled", command=self.generate); self.gen_btn.pack(side="right", padx=10)
 
     def select_video(self):
         p = filedialog.askopenfilename()
-        if p:
-            self.video_path = p
-            self.gen_btn.configure(state="normal")
+        if p: self.video_path = p; self.gen_btn.configure(state="normal")
 
     def generate(self):
         for child in self.work_area.winfo_children(): child.destroy()
-        msg = ctk.CTkLabel(self.work_area, text="Processing Cinematic Frames...", text_color=Theme.TEXT_DIM)
-        msg.pack(pady=100)
-        self.gen_btn.configure(state="disabled", text="⏳ Rendering...")
-        threading.Thread(target=self._run_gen, args=(msg,), daemon=True).start()
+        msg = ctk.CTkLabel(self.work_area, text="Processing Cinematic Frames...", text_color=Theme.TEXT_DIM); msg.pack(pady=100)
+        self.gen_btn.configure(state="disabled", text="⏳ Rendering..."); threading.Thread(target=self._run_gen, args=(msg,), daemon=True).start()
 
     def _run_gen(self, msg_lbl):
-        ff = FFmpegManager.get_ffmpeg()
-        info = FFmpegManager.probe_video(self.video_path)
+        ff = FFmpegManager.get_ffmpeg(); info = FFmpegManager.probe_video(self.video_path)
         if not info: return
-
-        folder = os.path.join(os.path.dirname(self.video_path), "AIVerse_Shots")
-        os.makedirs(folder, exist_ok=True)
-        
-        # Target: Start, Middle, End
-        targets = [
-            {"label": "First Frame", "time": 0.5}, # Slightly offset to avoid absolute zero black
-            {"label": "Middle Frame", "time": info['dur'] / 2},
-            {"label": "Last Frame", "time": max(0, info['dur'] - 1)}
-        ]
-        
+        folder = os.path.join(os.path.dirname(self.video_path), "AIVerse_Shots"); os.makedirs(folder, exist_ok=True)
+        targets = [{"label": "First Frame", "time": 0.5}, {"label": "Middle Frame", "time": info['dur'] / 2}, {"label": "Last Frame", "time": max(0, info['dur'] - 1)}]
         results = []
         for i, target in enumerate(targets):
             out = os.path.join(folder, f"{target['label'].replace(' ', '')}_{int(time.time())}.png")
             cmd = [ff, "-y", "-ss", str(target['time']), "-i", self.video_path, "-vframes", "1", out]
             subprocess.run(cmd, capture_output=True)
-            if os.path.exists(out):
-                results.append({"path": out, "label": target['label']})
-
-        # Also create combined strip
+            if os.path.exists(out): results.append({"path": out, "label": target['label']})
         if len(results) == 3:
             strip_path = os.path.join(folder, f"FullStoryboard_{int(time.time())}.png")
-            imgs = [Image.open(r["path"]) for r in results]
-            total_w = sum(img.width for img in imgs)
-            max_h = max(img.height for img in imgs)
-            strip = Image.new('RGB', (total_w, max_h))
-            x = 0
-            for img in imgs:
-                strip.paste(img, (x, 0))
-                x += img.width
-            strip.save(strip_path)
-            results.append({"path": strip_path, "label": "Full Storyboard Strip"})
-
+            imgs = [Image.open(r["path"]) for r in results]; total_w = sum(img.width for img in imgs); max_h = max(img.height for img in imgs)
+            strip = Image.new('RGB', (total_w, max_h)); x = 0
+            for img in imgs: strip.paste(img, (x, 0)); x += img.width
+            strip.save(strip_path); results.append({"path": strip_path, "label": "Full Storyboard Strip"})
         self.after(0, lambda: self._on_done(results, msg_lbl))
 
     def _on_done(self, results, msg_lbl):
-        msg_lbl.destroy()
-        self.gen_btn.configure(state="normal", text="🎨 Generate All Frames")
-        
+        msg_lbl.destroy(); self.gen_btn.configure(state="normal", text="🎨 Generate All Frames")
         for res in results:
-            card = ctk.CTkFrame(self.work_area, fg_color=Theme.CARD_BG, corner_radius=12)
-            card.pack(fill="x", padx=15, pady=10)
-            
-            # Preview Left
-            img = Image.open(res["path"])
-            img.thumbnail((300, 200))
-            ctk_img = ctk.CTkImage(img, size=(img.width, img.height))
-            
-            pre = ctk.CTkLabel(card, image=ctk_img, text="")
-            pre.pack(side="left", padx=15, pady=15)
-            
-            # Details Center
-            info = ctk.CTkFrame(card, fg_color="transparent")
-            info.pack(side="left", fill="y", padx=20, pady=20)
+            card = ctk.CTkFrame(self.work_area, fg_color=Theme.CARD_BG, corner_radius=12); card.pack(fill="x", padx=15, pady=10)
+            img = Image.open(res["path"]); img.thumbnail((300, 200)); ctk_img = ctk.CTkImage(img, size=(img.width, img.height))
+            pre = ctk.CTkLabel(card, image=ctk_img, text=""); pre.pack(side="left", padx=15, pady=15)
+            # Zoom on click
+            pre.bind("<Button-1>", lambda e, p=res["path"]: FullscreenViewer(self.master.master.master, p))
+            info = ctk.CTkFrame(card, fg_color="transparent"); info.pack(side="left", fill="y", padx=20, pady=20)
             ctk.CTkLabel(info, text=res["label"], font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w")
             ctk.CTkLabel(info, text=f"Captured from: {os.path.basename(self.video_path)}", font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM).pack(anchor="w")
-            
-            # Action Right
             def open_f(p=res["path"]): os.startfile(p)
             ctk.CTkButton(card, text="💾 Open & View", width=120, height=40, fg_color=Theme.ACCENT, command=open_f).pack(side="right", padx=20)
-
-        if SettingsManager.load().get("auto_open") and results:
-            os.startfile(os.path.dirname(results[0]["path"]))
+        if SettingsManager.load().get("auto_open") and results: os.startfile(os.path.dirname(results[0]["path"]))
 
 # ─── Main Application ──────────────────────────────────────────────────────
 class AIVerseStudio(ctk.CTk):
@@ -458,16 +408,37 @@ class AIVerseStudio(ctk.CTk):
         self.configure(fg_color=Theme.BG_DARK)
         
         self.views = {}
+        self.sidebar_open = True
+        
         self._init_ui()
         self._init_views()
         self.switch_tab("home")
 
     def _init_ui(self):
         self.grid_columnconfigure(0, weight=0); self.grid_columnconfigure(1, weight=1); self.grid_rowconfigure(0, weight=1)
-        self.nav = ctk.CTkFrame(self, width=280, fg_color=Theme.PANEL_BG, corner_radius=0); self.nav.grid(row=0, column=0, sticky="nsew"); self.nav.grid_propagate(False)
-        header = ctk.CTkFrame(self.nav, fg_color="transparent"); header.pack(fill="x", pady=30, padx=20)
-        ctk.CTkLabel(header, text="🌌", font=ctk.CTkFont(size=40)).pack(); ctk.CTkLabel(header, text="AIVerseStudio", font=ctk.CTkFont(size=20, weight="bold")).pack()
         
+        # Navigation
+        self.nav = ctk.CTkFrame(self, width=280, fg_color=Theme.PANEL_BG, corner_radius=0)
+        self.nav.grid(row=0, column=0, sticky="nsew")
+        self.nav.grid_propagate(False)
+
+        # Toggle Button Header
+        self.toggle_f = ctk.CTkFrame(self.nav, fg_color="transparent")
+        self.toggle_f.pack(fill="x", padx=10, pady=10)
+        
+        self.burger_btn = ctk.CTkButton(self.toggle_f, text="☰", width=40, height=40, 
+                                        fg_color="transparent", text_color=Theme.TEXT_MAIN,
+                                        font=ctk.CTkFont(size=20), command=self.toggle_sidebar)
+        self.burger_btn.pack(side="left")
+
+        self.brand_lbl = ctk.CTkLabel(self.toggle_f, text="AIVerseStudio", 
+                                      font=ctk.CTkFont(size=16, weight="bold"))
+        self.brand_lbl.pack(side="left", padx=10)
+
+        # Header Image
+        self.header_img = ctk.CTkLabel(self.nav, text="🌌", font=ctk.CTkFont(size=40))
+        self.header_img.pack(pady=(20, 0))
+
         self.btns = {}
         self._nav_btn("home", "🏠  Dashboard", "home")
         self._nav_btn("extract", "⚡  Single Extract", "extract")
@@ -477,11 +448,12 @@ class AIVerseStudio(ctk.CTk):
         ctk.CTkFrame(self.nav, fg_color="transparent", height=100).pack(fill="y", expand=True)
         self._nav_btn("settings", "⚙️  Preferences", "settings")
         
-        self.container = ctk.CTkFrame(self, fg_color="transparent"); self.container.grid(row=0, column=1, sticky="nsew")
-        self.container.grid_rowconfigure(0, weight=1); self.container.grid_columnconfigure(0, weight=1)
+        self.container = ctk.CTkFrame(self, fg_color="transparent")
+        self.container.grid(row=0, column=1, sticky="nsew")
+        self.container.grid_rowconfigure(0, weight=1)
+        self.container.grid_columnconfigure(0, weight=1)
 
     def _init_views(self):
-        """Pre-initialize all views to maintain professional state persistence."""
         self.views["home"] = HomeView(self.container, self)
         self.views["extract"] = SingleFrameView(self.container, self)
         self.views["batch"] = BatchView(self.container, self)
@@ -492,25 +464,37 @@ class AIVerseStudio(ctk.CTk):
                             anchor="w", fg_color="transparent", hover_color=Theme.CARD_BG, 
                             text_color=Theme.TEXT_DIM, font=ctk.CTkFont(size=13), 
                             command=lambda t=tab_name: self.switch_tab(t))
-        btn.pack(fill="x", padx=15, pady=5); self.btns[id] = btn
+        btn.pack(fill="x", padx=15, pady=5)
+        self.btns[id] = btn
+
+    def toggle_sidebar(self):
+        if self.sidebar_open:
+            self.nav.configure(width=70)
+            for b in self.btns.values():
+                b.configure(text=b.cget("text").split("  ")[0], anchor="center")
+            self.brand_lbl.pack_forget()
+            self.header_img.pack_forget()
+        else:
+            self.nav.configure(width=280)
+            texts = {"home": "🏠  Dashboard", "extract": "⚡  Single Extract", 
+                     "batch": "📦  Batch Suite", "story": "🎞️  Storyboard", "settings": "⚙️  Preferences"}
+            for k, b in self.btns.items():
+                b.configure(text=texts[k], anchor="w")
+            self.brand_lbl.pack(side="left", padx=10)
+            self.header_img.pack(pady=(20, 0))
+        
+        self.sidebar_open = not self.sidebar_open
 
     def switch_tab(self, tab):
         if tab == "settings":
             self.show_settings()
             return
-
-        # UI State reset
-        for k, v in self.btns.items():
-            v.configure(fg_color="transparent", text_color=Theme.TEXT_DIM)
-        
-        # Hide all, show one
+        for k, v in self.btns.items(): v.configure(fg_color="transparent", text_color=Theme.TEXT_DIM)
         for name, view in self.views.items():
             if name == tab:
                 view.grid(row=0, column=0, sticky="nsew")
-                if tab in self.btns:
-                    self.btns[tab].configure(fg_color=Theme.ACCENT, text_color="white")
-            else:
-                view.grid_forget()
+                if tab in self.btns: self.btns[tab].configure(fg_color=Theme.ACCENT, text_color="white")
+            else: view.grid_forget()
 
     def show_settings(self):
         win = ctk.CTkToplevel(self); win.title("Preferences"); win.geometry("540x550"); win.configure(fg_color=Theme.BG_DARK); win.transient(self); win.grab_set()

@@ -142,9 +142,15 @@ class SingleFrameView(ctk.CTkFrame):
         self.lbl_file = self._label(self.info_card, "📄 No video selected")
         self.lbl_res  = self._label(self.info_card, "📐 Res: --")
         
+        # Format Selection
+        ctk.CTkLabel(ctrl, text="Quality Format", font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM).pack(anchor="w", padx=25, pady=(10, 0))
+        self.fmt_var = ctk.StringVar(value="PNG (Lossless)")
+        self.fmt_menu = ctk.CTkOptionMenu(ctrl, variable=self.fmt_var, values=["PNG (Lossless)", "JPEG (High)", "BMP"], fg_color=Theme.CARD_BG)
+        self.fmt_menu.pack(fill="x", padx=20, pady=(2, 10))
+
         # Power Toggles
         self.ai_card = ctk.CTkFrame(ctrl, fg_color="transparent")
-        self.ai_card.pack(fill="x", padx=20, pady=10)
+        self.ai_card.pack(fill="x", padx=20, pady=5)
         
         s = SettingsManager.load()
         self.skip_black_var = tk.BooleanVar(value=s.get("skip_black", True))

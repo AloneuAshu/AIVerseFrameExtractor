@@ -340,54 +340,114 @@ class BatchView(ctk.CTkFrame):
 # ─── View: Storyboard ─────────────────────────────────────────────────────
 class StoryboardView(ctk.CTkFrame):
     def __init__(self, master, app):
-        super().__init__(master, fg_color="transparent"); self.video_path = None; self._init_ui()
+        super().__init__(master, fg_color="transparent")
+        self.video_path = None
+        self.frames_data = [] # List of {path, label, time}
+        self._init_ui()
 
     def _init_ui(self):
-        self.grid_columnconfigure(0, weight=1); self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
         banner = ctk.CTkFrame(self, fg_color=Theme.PANEL_BG, corner_radius=15, height=100)
         banner.grid(row=0, column=0, sticky="ew", padx=20, pady=20)
         ctk.CTkLabel(banner, text="🎞️ CINEMATIC STORYBOARD", font=ctk.CTkFont(size=14, weight="bold"), text_color=Theme.ACCENT).pack(pady=(15, 0))
-        ctk.CTkLabel(banner, text="Extract Start, Middle, and End frames into a professional strip", font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM).pack()
-        main = ctk.CTkFrame(self, fg_color=Theme.PANEL_BG, corner_radius=15); main.grid(row=1, column=0, sticky="nsew", padx=20)
-        main.grid_columnconfigure(0, weight=1); main.grid_rowconfigure(0, weight=1)
-        self.pre_lbl = ctk.CTkLabel(main, text="Select a video to generate storyboard", text_color=Theme.CARD_BG); self.pre_lbl.grid(row=0, column=0)
-        ctrls = ctk.CTkFrame(self, fg_color="transparent"); ctrls.grid(row=2, column=0, sticky="ew", padx=20, pady=20)
+        ctk.CTkLabel(banner, text="Extract and Download individual First, Middle, or Last frames", font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM).pack()
+
+        # Workspace for frames
+        self.work_area = ctk.CTkScrollableFrame(self, fg_color=Theme.PANEL_BG, corner_radius=15)
+        self.work_area.grid(row=1, column=0, sticky="nsew", padx=20)
+        
+        self.placeholder = ctk.CTkLabel(self.work_area, text="Select a video to generate shots", text_color=Theme.CARD_BG)
+        self.placeholder.pack(pady=100)
+
+        ctrls = ctk.CTkFrame(self, fg_color="transparent")
+        ctrls.grid(row=2, column=0, sticky="ew", padx=20, pady=20)
+        
         ctk.CTkButton(ctrls, text="📂 Select Video", command=self.select_video, fg_color=Theme.CARD_BG).pack(side="left", padx=10)
-        self.gen_btn = ctk.CTkButton(ctrls, text="🎨 Generate Storyboard", fg_color=Theme.SUCCESS, state="disabled", command=self.generate)
+        self.gen_btn = ctk.CTkButton(ctrls, text="🎨 Generate All Frames", fg_color=Theme.SUCCESS, state="disabled", command=self.generate)
         self.gen_btn.pack(side="right", padx=10)
 
     def select_video(self):
         p = filedialog.askopenfilename()
-        if p: self.video_path = p; self.gen_btn.configure(state="normal")
+        if p:
+            self.video_path = p
+            self.gen_btn.configure(state="normal")
 
     def generate(self):
-        self.gen_btn.configure(state="disabled", text="⏳ Rendering..."); threading.Thread(target=self._run_gen, daemon=True).start()
+        for child in self.work_area.winfo_children(): child.destroy()
+        msg = ctk.CTkLabel(self.work_area, text="Processing Cinematic Frames...", text_color=Theme.TEXT_DIM)
+        msg.pack(pady=100)
+        self.gen_btn.configure(state="disabled", text="⏳ Rendering...")
+        threading.Thread(target=self._run_gen, args=(msg,), daemon=True).start()
 
-    def _run_gen(self):
-        ff = FFmpegManager.get_ffmpeg(); info = FFmpegManager.probe_video(self.video_path)
+    def _run_gen(self, msg_lbl):
+        ff = FFmpegManager.get_ffmpeg()
+        info = FFmpegManager.probe_video(self.video_path)
         if not info: return
-        folder = os.path.join(os.path.dirname(self.video_path), "AIVerse_Storyboards"); os.makedirs(folder, exist_ok=True)
-        times = [info['dur']*0.1, info['dur']*0.5, info['dur']*0.9]; frames = []
-        for i, t in enumerate(times):
-            tmp = os.path.join(folder, f"tmp_{i}.png")
-            cmd = [ff, "-y", "-ss", str(t), "-i", self.video_path, "-vframes", "1", tmp]
-            subprocess.run(cmd, capture_output=True)
-            if os.path.exists(tmp): frames.append(tmp)
-        if len(frames) == 3:
-            imgs = [Image.open(f) for f in frames]; total_w = sum(img.width for img in imgs); max_h = max(img.height for img in imgs)
-            story = Image.new('RGB', (total_w, max_h)); x = 0
-            for img in imgs: story.paste(img, (x, 0)); x += img.width
-            out_path = os.path.join(folder, f"{os.path.splitext(os.path.basename(self.video_path))[0]}_Storyboard.png")
-            story.save(out_path)
-            for f in frames:
-                os.remove(f)
-            self.after(0, lambda: self._on_done(out_path))
 
-    def _on_done(self, out):
-        self.gen_btn.configure(state="normal", text="🎨 Generate Storyboard")
-        img = Image.open(out); img.thumbnail((1000, 300)); ctk_img = ctk.CTkImage(img, size=(img.width, img.height))
-        self.pre_lbl.configure(image=ctk_img, text=""); self.pre_lbl.image = ctk_img
-        if SettingsManager.load().get("auto_open"): os.startfile(os.path.dirname(out))
+        folder = os.path.join(os.path.dirname(self.video_path), "AIVerse_Shots")
+        os.makedirs(folder, exist_ok=True)
+        
+        # Target: Start, Middle, End
+        targets = [
+            {"label": "First Frame", "time": 0.5}, # Slightly offset to avoid absolute zero black
+            {"label": "Middle Frame", "time": info['dur'] / 2},
+            {"label": "Last Frame", "time": max(0, info['dur'] - 1)}
+        ]
+        
+        results = []
+        for i, target in enumerate(targets):
+            out = os.path.join(folder, f"{target['label'].replace(' ', '')}_{int(time.time())}.png")
+            cmd = [ff, "-y", "-ss", str(target['time']), "-i", self.video_path, "-vframes", "1", out]
+            subprocess.run(cmd, capture_output=True)
+            if os.path.exists(out):
+                results.append({"path": out, "label": target['label']})
+
+        # Also create combined strip
+        if len(results) == 3:
+            strip_path = os.path.join(folder, f"FullStoryboard_{int(time.time())}.png")
+            imgs = [Image.open(r["path"]) for r in results]
+            total_w = sum(img.width for img in imgs)
+            max_h = max(img.height for img in imgs)
+            strip = Image.new('RGB', (total_w, max_h))
+            x = 0
+            for img in imgs:
+                strip.paste(img, (x, 0))
+                x += img.width
+            strip.save(strip_path)
+            results.append({"path": strip_path, "label": "Full Storyboard Strip"})
+
+        self.after(0, lambda: self._on_done(results, msg_lbl))
+
+    def _on_done(self, results, msg_lbl):
+        msg_lbl.destroy()
+        self.gen_btn.configure(state="normal", text="🎨 Generate All Frames")
+        
+        for res in results:
+            card = ctk.CTkFrame(self.work_area, fg_color=Theme.CARD_BG, corner_radius=12)
+            card.pack(fill="x", padx=15, pady=10)
+            
+            # Preview Left
+            img = Image.open(res["path"])
+            img.thumbnail((300, 200))
+            ctk_img = ctk.CTkImage(img, size=(img.width, img.height))
+            
+            pre = ctk.CTkLabel(card, image=ctk_img, text="")
+            pre.pack(side="left", padx=15, pady=15)
+            
+            # Details Center
+            info = ctk.CTkFrame(card, fg_color="transparent")
+            info.pack(side="left", fill="y", padx=20, pady=20)
+            ctk.CTkLabel(info, text=res["label"], font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w")
+            ctk.CTkLabel(info, text=f"Captured from: {os.path.basename(self.video_path)}", font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM).pack(anchor="w")
+            
+            # Action Right
+            def open_f(p=res["path"]): os.startfile(p)
+            ctk.CTkButton(card, text="💾 Open & View", width=120, height=40, fg_color=Theme.ACCENT, command=open_f).pack(side="right", padx=20)
+
+        if SettingsManager.load().get("auto_open") and results:
+            os.startfile(os.path.dirname(results[0]["path"]))
 
 # ─── Main Application ──────────────────────────────────────────────────────
 class AIVerseStudio(ctk.CTk):

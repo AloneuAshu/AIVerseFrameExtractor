@@ -250,25 +250,35 @@ class SingleFrameView(ctk.CTkFrame):
         self.prog.set(0.4); threading.Thread(target=self._run_ffmpeg, daemon=True).start()
 
     def _run_ffmpeg(self):
-        ff = FFmpegManager.get_ffmpeg(); ext = ".png" if "PNG" in self.fmt_var.get() else ".jpg"
-        folder = os.path.join(os.path.dirname(self.video_path), f"{os.path.splitext(os.path.basename(self.video_path))[0]}_Frames")
-        os.makedirs(folder, exist_ok=True)
-        out = os.path.join(folder, f"LastFrame_{int(time.time())}{ext}")
-        
-        # True-Shot logic (Skip Black)
-        if self.skip_black_var.get():
-            # Strategy: Use FFmpeg blackdetect or a simpler multi-frame overwrite
-            cmd = [ff, "-y", "-sseof", "-2", "-i", self.video_path, "-vf", "blackdetect=d=0.1:pix_th=0.1", "-update", "1", out]
-        else:
-            cmd = [ff, "-y", "-ss", str(max(0, self.video_info['dur']-1)), "-i", self.video_path, "-update", "1", "-vframes", "1", out]
+        try:
+            ff = FFmpegManager.get_ffmpeg()
+            ext = ".png" if "PNG" in self.fmt_var.get() else ".jpg"
+            folder = os.path.join(os.path.dirname(self.video_path), f"{os.path.splitext(os.path.basename(self.video_path))[0]}_Frames")
+            os.makedirs(folder, exist_ok=True)
+            out = os.path.join(folder, f"LastFrame_{int(time.time())}{ext}")
             
-        subprocess.run(cmd, capture_output=True)
-        
-        if os.path.exists(out):
-            if self.sharp_var.get():
-                enhance_img = Image.open(out); enhance_img = ImageEnhance.Sharpness(enhance_img).enhance(1.6)
-                enhance_img = ImageEnhance.Contrast(enhance_img).enhance(1.05); enhance_img.save(out)
-            self.output_path = out; self.after(0, lambda: self._on_done(out))
+            # Optimized targeted seek for speed and reliability
+            # Even for "True-Shot", we start at the end and seek precisely
+            seek_point = max(0, self.video_info['dur'] - 0.5) 
+            
+            cmd = [ff, "-y", "-ss", str(seek_point), "-i", self.video_path, "-vframes", "1", out]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if os.path.exists(out):
+                if self.sharp_var.get():
+                    with Image.open(out) as img:
+                        enhanced = ImageEnhance.Sharpness(img).enhance(1.6)
+                        enhanced = ImageEnhance.Contrast(enhanced).enhance(1.05)
+                        enhanced.save(out)
+                self.output_path = out
+                self.after(0, lambda: self._on_done(out))
+            else:
+                error_msg = result.stderr if result.stderr else "Unknown FFmpeg error"
+                self.after(0, lambda: self.status.configure(text="❌ Extraction Failed", text_color=Theme.ERROR))
+                print(f"Extraction Error: {error_msg}")
+        except Exception as e:
+            self.after(0, lambda: self.status.configure(text=f"❌ Error: {str(e)}", text_color=Theme.ERROR))
+            self.after(0, lambda: self.extract_btn.configure(state="normal", text="⚡ Extract Last Frame"))
 
     def _on_done(self, out):
         self.extract_btn.configure(state="normal", text="⚡ Extract Last Frame"); self.prog.set(1.0)

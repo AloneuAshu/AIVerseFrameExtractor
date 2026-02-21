@@ -1,28 +1,55 @@
-# 🌌 AIVerseStudio - LastFrame Extractor
+# 🌌 AIVerseStudio - Creative Suite
 
-A professional, AI-powered desktop utility designed for frame-accurate video extraction with 4K quality preservation.
+A professional, high-performance desktop utility designed for cinematic video frame extraction and storyboard generation.
 
-## ✨ Features
-- **AIVerse Precision**: Uses advanced FFmpeg seeking to capture the absolute terminal frame of any video.
-- **Next-Gen UI**: Sleek, modern Slate/Indigo design optimized for high-performance workflows.
-- **Global App Settings**: Easily configure external tool paths (FFmpeg/FFprobe) via the built-in settings interface.
-- **Auto-Organization**: Automatically creates dedicated subfolders for each video project to keep your workspace clean.
-- **Lossless Export**: Support for 1:1 pixel-perfect PNG extractions.
+![AIVerseStudio](https://raw.githubusercontent.com/AloneuAshu/AIVerseFrameExtractor/main/AIVerseLogo.jpeg)
 
-## 🚀 Quick Start
-Run the Python script directly:
+## ✨ Pro Features
+- **🏠 Interactive Dashboard**: Instant system health checks (FFmpeg status) and quick-access tool cards.
+- **⚡ Precision Extraction**: Absolute terminal frame capture with **True-Shot AI** to skip black frames.
+- **🎞️ Timeline Scrubber**: Manually pick the perfect frame from the professional terminal-sequence preview.
+- **🎨 Cinematic Storyboard**: Generate high-res strips or download individual shots from the start, middle, and end of any video.
+- **📦 Batch Processing**: Process entire directories in seconds with live-log tracking.
+- **🍔 UI/UX Pro**: Collapsible sliding sidebar (Hamburger menu) and a **Cinema Viewer** for fullscreen image inspection.
+- **🪄 Studio Sharper**: Built-in image enhancement engine for crisp, production-ready outputs.
+
+## 🚀 Installation & Setup
+
+### Option 1: Standalone Portable EXE (Easiest)
+1. Download `AIVerseStudio.exe` from the latest release.
+2. Run it—no installation required!
+3. Ensure you have **FFmpeg** installed on your system or configured in the **Preferences** (⚙️) tab within the app.
+
+### Option 2: Developer Setup (Python)
+1. **Clone the Repo**:
+   ```bash
+   git clone https://github.com/AloneuAshu/AIVerseFrameExtractor.git
+   cd AIVerseFrameExtractor
+   ```
+2. **Install Dependencies**:
+   ```bash
+   pip install customtkinter pillow pyperclip
+   ```
+3. **Run the App**:
+   ```bash
+   python main.py
+   ```
+
+## ⚙️ Requirements
+- **FFmpeg/FFprobe**: Required for video processing.
+  - *Note: You can easily point the app to your `ffmpeg.exe` path via the in-app Preferences tab.*
+
+## 🛠️ Building From Source
+To bundle the app into a single executable with custom icon:
 ```bash
-python main.py
-```
-
-## 🛠 Building the Portable App
-To create a standalone EXE with the new branding:
-```bash
-python -m PyInstaller --noconsole --onefile --name "AIVerseStudio_Extractor" main.py
+python -m PyInstaller --noconsole --onefile --icon "AIVerseLogo.ico" --name "AIVerseStudio" main.py
 ```
 
 ## 📝 Technologies
-- **CustomTkinter**: Premium UI components.
-- **FFmpeg**: The core extraction engine.
-- **Pillow**: Image processing and rendering.
-- **Pyperclip**: Integrated clipboard management.
+- **CustomTkinter**: Modern Slate/Indigo UI components.
+- **FFmpeg Engine**: Industry-standard video processing.
+- **Pillow**: Advanced image enhancement & storyboard merging.
+- **Multi-threading**: Keeping the UI responsive during heavy AI tasks.
+
+---
+*Created with 🌌 for the AIVerse Community.*

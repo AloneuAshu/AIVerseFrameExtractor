@@ -11,18 +11,16 @@ import shutil
 import pyperclip
 import sys
 
+# ─── Configuration & Persistence ──────────────────────────────────────────
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-# ─── Configuration & Persistence ──────────────────────────────────────────
 class SettingsManager:
-    """Manages application settings persisted in a JSON file."""
     FILE_PATH = "settings.json"
     DEFAULTS = {
         "ffmpeg_path": r"C:\Users\srika\FFMeg\ffmpeg-8.0.1-essentials_build\ffmpeg-8.0.1-essentials_build\bin\ffmpeg.exe",
@@ -34,25 +32,16 @@ class SettingsManager:
         if os.path.exists(cls.FILE_PATH):
             try:
                 with open(cls.FILE_PATH, "r") as f:
-                    data = json.load(f)
-                    # Merge with defaults to ensure all keys exist
-                    return {**cls.DEFAULTS, **data}
-            except:
-                return cls.DEFAULTS
+                    return {**cls.DEFAULTS, **json.load(f)}
+            except: return cls.DEFAULTS
         return cls.DEFAULTS
 
     @classmethod
     def save(cls, settings):
-        try:
-            with open(cls.FILE_PATH, "w") as f:
-                json.dump(settings, f, indent=4)
-        except Exception as e:
-            print(f"Error saving settings: {e}")
+        with open(cls.FILE_PATH, "w") as f:
+            json.dump(settings, f, indent=4)
 
 # ─── Theme ──────────────────────────────────────────────────────────────────
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
-
 class Theme:
     ACCENT      = "#6366F1"  # Indigo 500
     ACCENT_HOVER = "#4F46E5" # Indigo 600
@@ -64,423 +53,270 @@ class Theme:
     TEXT_MAIN   = "#F8FAFC"  # Slate 50
     TEXT_DIM    = "#94A3B8"  # Slate 400
 
-# ─── FFmpeg Management ──────────────────────────────────────────────────────
+# ─── FFmpeg Support ────────────────────────────────────────────────────────
 class FFmpegManager:
-    """Handles discovery and execution of FFmpeg/FFprobe."""
-    
     @classmethod
     def get_ffmpeg(cls):
-        """Returns the best available ffmpeg path."""
-        settings = SettingsManager.load()
-        path = settings.get("ffmpeg_path")
-        if path and os.path.exists(path):
-            return path
-        if shutil.which("ffmpeg"):
-            return "ffmpeg"
-        return None
+        path = SettingsManager.load().get("ffmpeg_path")
+        if path and os.path.exists(path): return path
+        return "ffmpeg" if shutil.which("ffmpeg") else None
 
     @classmethod
     def get_ffprobe(cls):
-        """Returns the best available ffprobe path."""
-        settings = SettingsManager.load()
-        path = settings.get("ffprobe_path")
-        if path and os.path.exists(path):
-            return path
-        if shutil.which("ffprobe"):
-            return "ffprobe"
-        return None
+        path = SettingsManager.load().get("ffprobe_path")
+        if path and os.path.exists(path): return path
+        return "ffprobe" if shutil.which("ffprobe") else None
 
-# ─── Main Application ───────────────────────────────────────────────────────
-class LastFrameExtractor(ctk.CTk):
-    def __init__(self):
-        super().__init__()
-
-        self.title("AIVerseStudio - LastFrame Extractor")
-        self.geometry("1200x800")
-        self.minsize(1000, 700)
-        self.configure(fg_color=Theme.BG_DARK)
-
-        # State Variables
-        self.video_path  = None
+# ─── View: Single Frame Extractor ──────────────────────────────────────────
+class SingleFrameView(ctk.CTkFrame):
+    def __init__(self, master, app):
+        super().__init__(master, fg_color="transparent")
+        self.app = app
+        self.video_path = None
+        self.video_info = {}
         self.output_path = None
-        self.video_info  = {}
-        self.extraction_history = []
-
         self._init_ui()
 
     def _init_ui(self):
-        # Configure Grid
-        self.grid_columnconfigure(0, weight=0) # Sidebar
-        self.grid_columnconfigure(1, weight=1) # Main Area
+        self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        self._build_sidebar()
-        self._build_main_area()
+        # Main Layout: Two columns (Controls vs Preview)
+        content = ctk.CTkFrame(self, fg_color="transparent")
+        content.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+        content.grid_columnconfigure(1, weight=1)
+        content.grid_rowconfigure(0, weight=1)
 
-    def _build_sidebar(self):
-        sidebar = ctk.CTkFrame(self, width=320, fg_color=Theme.PANEL_BG, corner_radius=0)
-        sidebar.grid(row=0, column=0, sticky="nsew")
-        sidebar.grid_propagate(False)
+        # Left Column: controls
+        ctrl = ctk.CTkFrame(content, width=320, fg_color=Theme.PANEL_BG, corner_radius=15)
+        ctrl.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
+        ctrl.grid_propagate(False)
 
-        # Brand / Logo
-        brand_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
-        brand_frame.pack(fill="x", padx=20, pady=(20, 10))
+        ctk.CTkLabel(ctrl, text="SINGLE EXTRACTION", font=ctk.CTkFont(size=12, weight="bold"), text_color=Theme.ACCENT).pack(pady=(20, 10))
         
-        # Settings Cog at top right of brand frame
-        settings_btn = ctk.CTkButton(brand_frame, text="⚙️", width=30, height=30,
-                                    fg_color="transparent", hover_color=Theme.CARD_BG,
-                                    text_color=Theme.TEXT_DIM, command=self.show_settings)
-        settings_btn.place(relx=1.0, rely=0, anchor="ne")
+        self.select_btn = ctk.CTkButton(ctrl, text="📂 Select Video", height=45, fg_color=Theme.ACCENT, command=self.select_video)
+        self.select_btn.pack(fill="x", padx=20, pady=10)
 
-        logo_lbl = ctk.CTkLabel(brand_frame, text="🌌", font=ctk.CTkFont(size=44))
-        logo_lbl.pack(pady=(10, 5))
-        
-        title_lbl = ctk.CTkLabel(brand_frame, text="AIVerseStudio", 
-                                 font=ctk.CTkFont(size=22, weight="bold"),
-                                 text_color=Theme.TEXT_MAIN)
-        title_lbl.pack(pady=(0, 0))
-        
-        sub_lbl = ctk.CTkLabel(brand_frame, text="Next-Gen Video Intelligence", 
-                               font=ctk.CTkFont(size=12),
-                               text_color=Theme.TEXT_DIM)
-        sub_lbl.pack(pady=(5, 10))
-
-        # Action Buttons
-        self.select_btn = ctk.CTkButton(sidebar, text="📂  Select Video File",
-                                       height=50, font=ctk.CTkFont(size=14, weight="bold"),
-                                       fg_color=Theme.ACCENT, hover_color=Theme.ACCENT_HOVER,
-                                       command=self.handle_select_video)
-        self.select_btn.pack(fill="x", padx=30, pady=(10, 20))
-
-        # Metadata Card
-        self.info_card = ctk.CTkFrame(sidebar, fg_color=Theme.CARD_BG, corner_radius=12)
+        # Info Card
+        self.info_card = ctk.CTkFrame(ctrl, fg_color=Theme.CARD_BG, corner_radius=10)
         self.info_card.pack(fill="x", padx=20, pady=10)
+        self.lbl_file = self._label(self.info_card, "📄 No video selected")
+        self.lbl_res  = self._label(self.info_card, "📐 Res: --")
+        self.lbl_fps  = self._label(self.info_card, "🔢 FPS: --")
+
+        # Format
+        ctk.CTkLabel(ctrl, text="Quality Format", font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM).pack(anchor="w", padx=25)
+        self.fmt_var = ctk.StringVar(value="PNG (Lossless)")
+        ctk.CTkOptionMenu(ctrl, variable=self.fmt_var, values=["PNG (Lossless)", "JPEG (High)", "BMP"], fg_color=Theme.CARD_BG).pack(fill="x", padx=20, pady=(2, 20))
+
+        # Extract
+        self.extract_btn = ctk.CTkButton(ctrl, text="⚡ Extract Last Frame", height=50, fg_color=Theme.SUCCESS, state="disabled", command=self.extract)
+        self.extract_btn.pack(fill="x", padx=20, pady=(20, 5))
         
-        ctk.CTkLabel(self.info_card, text="VIDEO PROPERTIES", 
-                     font=ctk.CTkFont(size=10, weight="bold"),
-                     text_color=Theme.ACCENT).pack(anchor="w", padx=15, pady=(12, 5))
+        self.prog = ctk.CTkProgressBar(ctrl, height=8, fg_color=Theme.BG_DARK)
+        self.prog.pack(fill="x", padx=20, pady=5)
+        self.prog.set(0)
+
+        # Right Column: Preview
+        self.preview_box = ctk.CTkFrame(content, fg_color=Theme.PANEL_BG, corner_radius=15)
+        self.preview_box.grid(row=0, column=1, sticky="nsew")
+        self.preview_box.grid_rowconfigure(0, weight=1)
+        self.preview_box.grid_columnconfigure(0, weight=1)
         
-        self.lbl_file = self._create_info_label(self.info_card, "📄 No file selected")
-        self.lbl_res  = self._create_info_label(self.info_card, "📐 Resolution: --")
-        self.lbl_dur  = self._create_info_label(self.info_card, "⏱ Duration: --")
-        self.lbl_fps  = self._create_info_label(self.info_card, "🔢 FPS: --")
-        self.lbl_codec = self._create_info_label(self.info_card, "🎞 Codec: --", bottom=15)
+        self.pre_lbl = ctk.CTkLabel(self.preview_box, text="Preview Area", font=ctk.CTkFont(size=14), text_color=Theme.CARD_BG)
+        self.pre_lbl.grid(row=0, column=0)
 
-        # Settings Card
-        settings_card = ctk.CTkFrame(sidebar, fg_color=Theme.CARD_BG, corner_radius=12)
-        settings_card.pack(fill="x", padx=20, pady=10)
-        
-        ctk.CTkLabel(settings_card, text="EXPORT SETTINGS", 
-                     font=ctk.CTkFont(size=10, weight="bold"),
-                     text_color=Theme.ACCENT).pack(anchor="w", padx=15, pady=(12, 5))
-        
-        ctk.CTkLabel(settings_card, text="Format", font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM).pack(anchor="w", padx=15)
-        self.format_var = ctk.StringVar(value="PNG (Lossless)")
-        self.format_menu = ctk.CTkOptionMenu(settings_card, variable=self.format_var,
-                                            values=["PNG (Lossless)", "JPEG (High Quality)", "BMP (Raw)"],
-                                            fg_color=Theme.PANEL_BG, button_color=Theme.ACCENT)
-        self.format_menu.pack(fill="x", padx=15, pady=(2, 12))
+        # Bottom Bar
+        bot = ctk.CTkFrame(self, height=60, fg_color="transparent")
+        bot.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 20))
+        self.status = ctk.CTkLabel(bot, text="Ready", font=ctk.CTkFont(size=12), text_color=Theme.TEXT_DIM)
+        self.status.pack(side="left")
 
-        # Progress Section
-        self.extract_btn = ctk.CTkButton(sidebar, text="⚡  Extract Last Frame",
-                                        height=54, font=ctk.CTkFont(size=15, weight="bold"),
-                                        fg_color=Theme.SUCCESS, hover_color="#059669",
-                                        state="disabled",
-                                        command=self.handle_extract)
-        self.extract_btn.pack(fill="x", padx=30, pady=(20, 5))
-        
-        self.progress_bar = ctk.CTkProgressBar(sidebar, height=8, fg_color=Theme.CARD_BG, progress_color=Theme.ACCENT)
-        self.progress_bar.pack(fill="x", padx=30, pady=5)
-        self.progress_bar.set(0)
-        
-        self.status_lbl = ctk.CTkLabel(sidebar, text="Awaiting input...", font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM)
-        self.status_lbl.pack(pady=(2, 20))
+    def _label(self, parent, txt):
+        l = ctk.CTkLabel(parent, text=txt, font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM, anchor="w")
+        l.pack(fill="x", padx=15, pady=2)
+        return l
 
-    def _build_main_area(self):
-        main = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
-        main.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
-        
-        main.grid_rowconfigure(0, weight=1)
-        main.grid_columnconfigure(0, weight=1)
+    def select_video(self):
+        p = filedialog.askopenfilename()
+        if p:
+            self.video_path = p
+            self.lbl_file.configure(text=f"📄 {os.path.basename(p)}", text_color=Theme.TEXT_MAIN)
+            self.status.configure(text="Analyzing...", text_color=Theme.ACCENT)
+            threading.Thread(target=self._probe, daemon=True).start()
 
-        # Preview Container
-        self.preview_container = ctk.CTkFrame(main, fg_color=Theme.PANEL_BG, corner_radius=20, border_width=1, border_color=Theme.CARD_BG)
-        self.preview_container.grid(row=0, column=0, sticky="nsew")
-        self.preview_container.grid_rowconfigure(0, weight=1)
-        self.preview_container.grid_columnconfigure(0, weight=1)
-
-        self.preview_placeholder = ctk.CTkLabel(self.preview_container, 
-                                                text="PREVIEW AREA\n\nDrop a video or click select\nto see the extracted frame here",
-                                                font=ctk.CTkFont(size=16), text_color=Theme.CARD_BG)
-        self.preview_placeholder.grid(row=0, column=0)
-        
-        self.preview_img_label = None
-
-        # Bottom Controls
-        controls = ctk.CTkFrame(main, fg_color="transparent")
-        controls.grid(row=1, column=0, sticky="ew", pady=(20, 0))
-        
-        self.result_path_lbl = ctk.CTkLabel(controls, text="", font=ctk.CTkFont(size=12), text_color=Theme.SUCCESS)
-        self.result_path_lbl.pack(side="left")
-
-        self.copy_btn = ctk.CTkButton(controls, text="📋 Copy Path", width=120, height=36,
-                                     fg_color=Theme.CARD_BG, hover_color=Theme.PANEL_BG,
-                                     state="disabled", command=self.copy_path)
-        self.copy_btn.pack(side="right", padx=(10, 0))
-
-        self.open_folder_btn = ctk.CTkButton(controls, text="📂 Open Folder", width=120, height=36,
-                                           fg_color=Theme.CARD_BG, hover_color=Theme.PANEL_BG,
-                                           state="disabled", command=self.open_folder)
-        self.open_folder_btn.pack(side="right")
-
-    def _create_info_label(self, parent, text, bottom=5):
-        lbl = ctk.CTkLabel(parent, text=text, font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM, anchor="w")
-        lbl.pack(fill="x", padx=15, pady=(2, bottom))
-        return lbl
-
-    # ─── Logic ──────────────────────────────────────────────────────────────────
-    
-    def handle_select_video(self):
-        path = filedialog.askopenfilename(
-            title="Select Video File",
-            filetypes=[("Video Files", "*.mp4 *.mkv *.mov *.avi *.webm *.flv *.wmv *.m4v *.ts"), ("All Files", "*.*")]
-        )
-        if path:
-            self.video_path = path
-            self._on_video_selected()
-
-    def _on_video_selected(self):
-        filename = os.path.basename(self.video_path)
-        self.lbl_file.configure(text=f"📄 {filename}", text_color=Theme.TEXT_MAIN)
-        self.status_lbl.configure(text="Probing video stream...", text_color=Theme.ACCENT)
-        self.progress_bar.set(0.1)
-        
-        threading.Thread(target=self._probe_video, daemon=True).start()
-
-    def _probe_video(self):
-        ffprobe = FFmpegManager.get_ffprobe()
-        if not ffprobe:
-            self._update_status("❌ FFprobe not found", Theme.ERROR)
-            return
-
+    def _probe(self):
+        ff = FFmpegManager.get_ffprobe()
+        if not ff: return
         try:
-            cmd = [ffprobe, "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", self.video_path]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-            data = json.loads(result.stdout)
-            
-            video_stream = next((s for s in data.get("streams", []) if s.get("codec_type") == "video"), None)
-            if not video_stream:
-                raise ValueError("No video stream found")
+            cmd = [ff, "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", self.video_path]
+            data = json.loads(subprocess.run(cmd, capture_output=True, text=True).stdout)
+            v = next(s for s in data["streams"] if s["codec_type"] == "video")
+            dur = float(data["format"]["duration"])
+            self.video_info = {"w": v["width"], "h": v["height"], "fps": v["r_frame_rate"], "dur": dur}
+            self.after(0, self._apply_probe)
+        except: pass
 
-            # Extract info
-            w = video_stream.get("width", 0)
-            h = video_stream.get("height", 0)
-            codec = video_stream.get("codec_name", "unknown").upper()
-            
-            r_fps = video_stream.get("r_frame_rate", "0/0")
-            try:
-                n, d = map(int, r_fps.split("/"))
-                fps = round(n/d, 2) if d != 0 else 0
-            except: fps = "--"
-            
-            dur = float(data.get("format", {}).get("duration", 0))
-            dur_str = time.strftime('%H:%M:%S', time.gmtime(dur)) + f".{int((dur%1)*100):02d}"
-
-            self.video_info = {"width": w, "height": h, "codec": codec, "fps": fps, "duration_sec": dur, "duration_str": dur_str}
-            
-            self.after(0, self._apply_probe_results)
-            
-        except Exception as e:
-            self._update_status(f"❌ Error: {str(e)}", Theme.ERROR)
-
-    def _apply_probe_results(self):
-        vi = self.video_info
-        self.lbl_res.configure(text=f"📐 {vi['width']} x {vi['height']}", text_color=Theme.TEXT_MAIN)
-        self.lbl_dur.configure(text=f"⏱ {vi['duration_str']}", text_color=Theme.TEXT_MAIN)
-        self.lbl_fps.configure(text=f"🔢 {vi['fps']} FPS", text_color=Theme.TEXT_MAIN)
-        self.lbl_codec.configure(text=f"🎞 {vi['codec']}", text_color=Theme.TEXT_MAIN)
-        
+    def _apply_probe(self):
+        self.lbl_res.configure(text=f"📐 {self.video_info['w']}x{self.video_info['h']}", text_color=Theme.TEXT_MAIN)
+        self.lbl_fps.configure(text=f"🔢 {self.video_info['fps']} FPS", text_color=Theme.TEXT_MAIN)
         self.extract_btn.configure(state="normal")
-        self.progress_bar.set(0)
-        self._update_status("✅ Ready for extraction", Theme.SUCCESS)
+        self.status.configure(text="✅ Video Loaded", text_color=Theme.SUCCESS)
 
-    def handle_extract(self):
-        if not self.video_path: return
-        
-        self.extract_btn.configure(state="disabled", text="⏳ Working...")
-        self._update_status("Decoding last frame...", Theme.ACCENT)
-        self.progress_bar.set(0.4)
-        
-        threading.Thread(target=self._run_extraction, daemon=True).start()
+    def extract(self):
+        self.extract_btn.configure(state="disabled", text="⏳ ...")
+        self.prog.set(0.4)
+        threading.Thread(target=self._run_ffmpeg, daemon=True).start()
 
-    def _run_extraction(self):
-        ffmpeg = FFmpegManager.get_ffmpeg()
-        if not ffmpeg:
-            self._update_status("❌ FFmpeg not found", Theme.ERROR)
+    def _run_ffmpeg(self):
+        ff = FFmpegManager.get_ffmpeg()
+        ext = ".png" if "PNG" in self.fmt_var.get() else ".jpg"
+        folder = os.path.join(os.path.dirname(self.video_path), f"{os.path.splitext(os.path.basename(self.video_path))[0]}_Frames")
+        os.makedirs(folder, exist_ok=True)
+        out = os.path.join(folder, f"LastFrame_{int(time.time())}{ext}")
+        
+        cmd = [ff, "-y", "-ss", str(max(0, self.video_info['dur']-1)), "-i", self.video_path, "-update", "1", "-vframes", "1", out]
+        subprocess.run(cmd, capture_output=True)
+        
+        if os.path.exists(out):
+            self.output_path = out
+            self.after(0, lambda: self._on_done(out))
+
+    def _on_done(self, out):
+        self.extract_btn.configure(state="normal", text="⚡ Extract Last Frame")
+        self.prog.set(1.0)
+        self.status.configure(text=f"✅ Saved to folder", text_color=Theme.SUCCESS)
+        img = Image.open(out)
+        img.thumbnail((600, 400))
+        ctk_img = ctk.CTkImage(img, size=(img.width, img.height))
+        self.pre_lbl.configure(image=ctk_img, text="")
+        self.pre_lbl.image = ctk_img
+
+# ─── View: Batch Extractor ────────────────────────────────────────────────
+class BatchView(ctk.CTkFrame):
+    def __init__(self, master, app):
+        super().__init__(master, fg_color="transparent")
+        self._init_ui()
+
+    def _init_ui(self):
+        ctk.CTkLabel(self, text="📦 Batch Suite", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=40)
+        ctk.CTkLabel(self, text="This feature is coming in the next AIVerse update!", text_color=Theme.TEXT_DIM).pack()
+        ctk.CTkButton(self, text="Upgrade to Pro (Coming Soon)", state="disabled", fg_color=Theme.CARD_BG).pack(pady=20)
+
+# ─── View: Storyboard ─────────────────────────────────────────────────────
+class StoryboardView(ctk.CTkFrame):
+    def __init__(self, master, app):
+        super().__init__(master, fg_color="transparent")
+        self._init_ui()
+
+    def _init_ui(self):
+        ctk.CTkLabel(self, text="🎞️ Storyboard Generator", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=40)
+        ctk.CTkLabel(self, text="Generate cinematic contact sheets automatically.", text_color=Theme.TEXT_DIM).pack()
+        ctk.CTkButton(self, text="Waitlist Active", state="disabled", fg_color=Theme.CARD_BG).pack(pady=20)
+
+# ─── Main Application ──────────────────────────────────────────────────────
+class AIVerseStudio(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.title("AIVerseStudio - Suite")
+        self.geometry("1300x850")
+        self.configure(fg_color=Theme.BG_DARK)
+
+        self.current_view = None
+        self._init_ui()
+        self.switch_tab("extract")
+
+    def _init_ui(self):
+        self.grid_columnconfigure(0, weight=0)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        # Sidebar Navigation
+        self.nav = ctk.CTkFrame(self, width=280, fg_color=Theme.PANEL_BG, corner_radius=0)
+        self.nav.grid(row=0, column=0, sticky="nsew")
+        self.nav.grid_propagate(False)
+
+        # Header
+        header = ctk.CTkFrame(self.nav, fg_color="transparent")
+        header.pack(fill="x", pady=30, padx=20)
+        ctk.CTkLabel(header, text="🌌", font=ctk.CTkFont(size=40)).pack()
+        ctk.CTkLabel(header, text="AIVerseStudio", font=ctk.CTkFont(size=20, weight="bold")).pack()
+        ctk.CTkLabel(header, text="Creative Suite v2.0", font=ctk.CTkFont(size=10), text_color=Theme.TEXT_DIM).pack()
+
+        # Nav Buttons
+        self.btns = {}
+        self._nav_btn("extract", "⚡  Single Extract", "extract")
+        self._nav_btn("batch", "📦  Batch Suite", "batch")
+        self._nav_btn("story", "🎞️  Storyboard", "story")
+        
+        # Spacer
+        ctk.CTkFrame(self.nav, fg_color="transparent", height=100).pack(fill="y", expand=True)
+
+        # Settings
+        self._nav_btn("settings", "⚙️  Global Settings", "settings")
+
+        # Main Container
+        self.container = ctk.CTkFrame(self, fg_color="transparent")
+        self.container.grid(row=0, column=1, sticky="nsew")
+        self.container.grid_rowconfigure(0, weight=1)
+        self.container.grid_columnconfigure(0, weight=1)
+
+    def _nav_btn(self, id, text, tab_name):
+        btn = ctk.CTkButton(self.nav, text=text, height=50, corner_radius=10,
+                            anchor="w", fg_color="transparent", hover_color=Theme.CARD_BG,
+                            text_color=Theme.TEXT_DIM, font=ctk.CTkFont(size=13),
+                            command=lambda: self.switch_tab(tab_name))
+        btn.pack(fill="x", padx=15, pady=5)
+        self.btns[id] = btn
+
+    def switch_tab(self, tab):
+        if self.current_view: self.current_view.destroy()
+        
+        # UI Selection State
+        for k, v in self.btns.items():
+            v.configure(fg_color="transparent", text_color=Theme.TEXT_DIM)
+        
+        if tab == "extract":
+            self.current_view = SingleFrameView(self.container, self)
+            self.btns["extract"].configure(fg_color=Theme.ACCENT, text_color="white")
+        elif tab == "batch":
+            self.current_view = BatchView(self.container, self)
+            self.btns["batch"].configure(fg_color=Theme.ACCENT, text_color="white")
+        elif tab == "story":
+            self.current_view = StoryboardView(self.container, self)
+            self.btns["story"].configure(fg_color=Theme.ACCENT, text_color="white")
+        elif tab == "settings":
+            self.show_settings()
             return
-
-        fmt_sel = self.format_var.get()
-        ext = ".png" if "PNG" in fmt_sel else ".jpg" if "JPEG" in fmt_sel else ".bmp"
-        
-        # ─── Folder Management ───
-        video_dir = os.path.dirname(self.video_path)
-        video_stem = os.path.splitext(os.path.basename(self.video_path))[0]
-        # Create a dedicated directory for this video's frames
-        extraction_dir = os.path.join(video_dir, f"{video_stem}_Frames")
-        
-        try:
-            if not os.path.exists(extraction_dir):
-                os.makedirs(extraction_dir)
-        except Exception as e:
-            self._update_status(f"❌ Folder Error: {str(e)}", Theme.ERROR)
-            self.after(0, lambda: self.extract_btn.configure(state="normal", text="⚡  Extract Last Frame"))
-            return
-
-        temp_out = os.path.join(extraction_dir, f"tmp_{int(time.time())}{ext}")
-        
-        # Strategy: Seek to near end and overwrite until EOF
-        seek_point = max(0, self.video_info['duration_sec'] - 1.0)
-        
-        cmd = [
-            ffmpeg, "-y",
-            "-ss", str(seek_point),
-            "-i", self.video_path,
-            "-update", "1",
-            "-q:v", "1" if ext == ".jpg" else "0",
-            temp_out
-        ]
-        
-        try:
-            # Run command
-            subprocess.run(cmd, capture_output=True, text=True, timeout=60)
             
-            if os.path.exists(temp_out) and os.path.getsize(temp_out) > 0:
-                # Success - rename to final
-                final_path = os.path.join(extraction_dir, f"{video_stem}_LastFrame{ext}")
-                
-                # Check for collisions within the dedicated folder
-                counter = 1
-                while os.path.exists(final_path):
-                    final_path = os.path.join(extraction_dir, f"{video_stem}_LastFrame_{counter}{ext}")
-                    counter += 1
-                
-                os.rename(temp_out, final_path)
-                self.output_path = final_path
-                self.after(0, lambda: self._on_extraction_complete(final_path))
-            else:
-                self._update_status("❌ Extraction failed", Theme.ERROR)
-                self.after(0, lambda: self.extract_btn.configure(state="normal", text="⚡  Extract Last Frame"))
-                
-        except Exception as e:
-            self._update_status(f"❌ Error: {str(e)}", Theme.ERROR)
-            self.after(0, lambda: self.extract_btn.configure(state="normal", text="⚡  Extract Last Frame"))
-
-    def _on_extraction_complete(self, path):
-        self._update_status("✅ Extraction successful!", Theme.SUCCESS)
-        self.progress_bar.set(1.0)
-        self.extract_btn.configure(state="normal", text="⚡  Extract Last Frame")
-        
-        name = os.path.basename(path)
-        self.result_path_lbl.configure(text=f"Saved: {name}")
-        self.copy_btn.configure(state="normal")
-        self.open_folder_btn.configure(state="normal")
-        
-        self._show_preview(path)
-
-    def _show_preview(self, path):
-        try:
-            img = Image.open(path)
-            
-            # Container dimensions
-            cw = self.preview_container.winfo_width() - 60
-            ch = self.preview_container.winfo_height() - 60
-            if cw < 400: cw = 600
-            if ch < 300: ch = 400
-            
-            img.thumbnail((cw, ch), Image.Resampling.LANCZOS)
-            
-            ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(img.width, img.height))
-            
-            if self.preview_img_label:
-                self.preview_img_label.destroy()
-            
-            self.preview_placeholder.grid_forget()
-            self.preview_img_label = ctk.CTkLabel(self.preview_container, image=ctk_img, text="")
-            self.preview_img_label.grid(row=0, column=0)
-            self.preview_img_label.image = ctk_img # Keep reference
-            
-        except Exception as e:
-            print(f"Preview error: {e}")
-
-    # ─── Helpers ────────────────────────────────────────────────────────────────
-
-    def _update_status(self, text, color=Theme.TEXT_DIM):
-        self.after(0, lambda: self.status_lbl.configure(text=text, text_color=color))
-
-    def copy_path(self):
-        if self.output_path:
-            pyperclip.copy(self.output_path)
-            self._update_status("📋 Path copied to clipboard", Theme.SUCCESS)
-
-    def open_folder(self):
-        if self.output_path:
-            os.startfile(os.path.dirname(self.output_path))
+        self.current_view.grid(row=0, column=0, sticky="nsew")
 
     def show_settings(self):
-        """Opens the Settings Modal."""
-        settings_win = ctk.CTkToplevel(self)
-        settings_win.title("Global App Settings")
-        settings_win.geometry("500x400")
-        settings_win.configure(fg_color=Theme.BG_DARK)
-        settings_win.transient(self) # Keep on top of main window
-        settings_win.grab_set()      # Modal
-        
-        ctk.CTkLabel(settings_win, text="Settings", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=20)
-        
-        container = ctk.CTkFrame(settings_win, fg_color=Theme.PANEL_BG, corner_radius=12)
-        container.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-        
-        settings = SettingsManager.load()
-        
-        # FFmpeg Path
-        ctk.CTkLabel(container, text="FFmpeg Executable Path", font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM).pack(anchor="w", padx=20, pady=(20, 5))
-        ffmpeg_entry = ctk.CTkEntry(container, width=400, fg_color=Theme.CARD_BG)
-        ffmpeg_entry.insert(0, settings.get("ffmpeg_path", ""))
-        ffmpeg_entry.pack(padx=20, pady=(0, 10))
-        
-        def browse_ffmpeg():
-            p = filedialog.askopenfilename(title="Select ffmpeg.exe", filetypes=[("Executable", "*.exe"), ("All Files", "*.*")])
-            if p:
-                ffmpeg_entry.delete(0, "end")
-                ffmpeg_entry.insert(0, p)
-        
-        ctk.CTkButton(container, text="📁 Browse FFmpeg", height=32, fg_color=Theme.CARD_BG, command=browse_ffmpeg).pack(padx=20, pady=(0, 10))
+        win = ctk.CTkToplevel(self)
+        win.title("Global Settings")
+        win.geometry("500x450")
+        win.configure(fg_color=Theme.BG_DARK)
+        win.transient(self); win.grab_set()
 
-        # FFprobe Path
-        ctk.CTkLabel(container, text="FFprobe Executable Path", font=ctk.CTkFont(size=11), text_color=Theme.TEXT_DIM).pack(anchor="w", padx=20, pady=(10, 5))
-        ffprobe_entry = ctk.CTkEntry(container, width=400, fg_color=Theme.CARD_BG)
-        ffprobe_entry.insert(0, settings.get("ffprobe_path", ""))
-        ffprobe_entry.pack(padx=20, pady=(0, 10))
+        ctk.CTkLabel(win, text="⚙️ Preferences", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=20)
+        s = SettingsManager.load()
         
-        def browse_ffprobe():
-            p = filedialog.askopenfilename(title="Select ffprobe.exe", filetypes=[("Executable", "*.exe"), ("All Files", "*.*")])
-            if p:
-                ffprobe_entry.delete(0, "end")
-                ffprobe_entry.insert(0, p)
+        f_ent = self._st_row(win, "FFmpeg Path", s["ffmpeg_path"])
+        p_ent = self._st_row(win, "FFprobe Path", s["ffprobe_path"])
 
-        ctk.CTkButton(container, text="📁 Browse FFprobe", height=32, fg_color=Theme.CARD_BG, command=browse_ffprobe).pack(padx=20, pady=(0, 10))
+        def save():
+            SettingsManager.save({"ffmpeg_path": f_ent.get(), "ffprobe_path": p_ent.get()})
+            win.destroy()
+        ctk.CTkButton(win, text="Save Changes", fg_color=Theme.ACCENT, command=save).pack(pady=20)
 
-        def save_all():
-            new_settings = {
-                "ffmpeg_path": ffmpeg_entry.get().strip(),
-                "ffprobe_path": ffprobe_entry.get().strip()
-            }
-            SettingsManager.save(new_settings)
-            self._update_status("✅ Settings saved", Theme.SUCCESS)
-            settings_win.destroy()
-
-        ctk.CTkButton(settings_win, text="💾 Save Changes", height=45, fg_color=Theme.ACCENT, hover_color=Theme.ACCENT_HOVER, command=save_all).pack(pady=(0, 20))
+    def _st_row(self, win, lbl, val):
+        f = ctk.CTkFrame(win, fg_color="transparent")
+        f.pack(fill="x", padx=30, pady=10)
+        ctk.CTkLabel(f, text=lbl, text_color=Theme.TEXT_DIM).pack(anchor="w")
+        e = ctk.CTkEntry(f, width=400, fg_color=Theme.PANEL_BG)
+        e.insert(0, val); e.pack(pady=5)
+        return e
 
 if __name__ == "__main__":
-    app = LastFrameExtractor()
+    app = AIVerseStudio()
     app.mainloop()

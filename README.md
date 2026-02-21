@@ -15,8 +15,8 @@ A professional, high-performance desktop utility designed for cinematic video fr
 
 ## 🚀 Download & Installation
 
-### 📥 1-Click Download
-[**⚡ Download AIVerseStudio for Windows**](https://github.com/AloneuAshu/AIVerseFrameExtractor/releases)
+### 📥 Auto-Download (Direct)
+[**🚀 Click to Download AIVerseStudio.exe**](https://github.com/AloneuAshu/AIVerseFrameExtractor/releases/latest/download/AIVerseStudio.exe)
 
 ### Option 1: Standalone Portable EXE (Easiest)
 1. Download `AIVerseStudio.exe` from the [latest release](https://github.com/AloneuAshu/AIVerseFrameExtractor/releases).

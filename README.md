@@ -13,10 +13,13 @@ A professional, high-performance desktop utility designed for cinematic video fr
 - **🍔 UI/UX Pro**: Collapsible sliding sidebar (Hamburger menu) and a **Cinema Viewer** for fullscreen image inspection.
 - **🪄 Studio Sharper**: Built-in image enhancement engine for crisp, production-ready outputs.
 
-## 🚀 Installation & Setup
+## 🚀 Download & Installation
+
+### 📥 1-Click Download
+[**⚡ Download AIVerseStudio for Windows**](https://github.com/AloneuAshu/AIVerseFrameExtractor/releases)
 
 ### Option 1: Standalone Portable EXE (Easiest)
-1. Download `AIVerseStudio.exe` from the latest release.
+1. Download `AIVerseStudio.exe` from the [latest release](https://github.com/AloneuAshu/AIVerseFrameExtractor/releases).
 2. Run it—no installation required!
 3. Ensure you have **FFmpeg** installed on your system or configured in the **Preferences** (⚙️) tab within the app.
 

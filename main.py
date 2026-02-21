@@ -453,39 +453,64 @@ class StoryboardView(ctk.CTkFrame):
 class AIVerseStudio(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("AIVerseStudio - Creative Suite"); self.geometry("1300x850"); self.configure(fg_color=Theme.BG_DARK)
-        self.current_view = None; self._init_ui(); self.switch_tab("home")
+        self.title("AIVerseStudio - Creative Suite")
+        self.geometry("1300x850")
+        self.configure(fg_color=Theme.BG_DARK)
+        
+        self.views = {}
+        self._init_ui()
+        self._init_views()
+        self.switch_tab("home")
 
     def _init_ui(self):
         self.grid_columnconfigure(0, weight=0); self.grid_columnconfigure(1, weight=1); self.grid_rowconfigure(0, weight=1)
         self.nav = ctk.CTkFrame(self, width=280, fg_color=Theme.PANEL_BG, corner_radius=0); self.nav.grid(row=0, column=0, sticky="nsew"); self.nav.grid_propagate(False)
         header = ctk.CTkFrame(self.nav, fg_color="transparent"); header.pack(fill="x", pady=30, padx=20)
         ctk.CTkLabel(header, text="🌌", font=ctk.CTkFont(size=40)).pack(); ctk.CTkLabel(header, text="AIVerseStudio", font=ctk.CTkFont(size=20, weight="bold")).pack()
+        
         self.btns = {}
-        self._nav_btn("home", "🏠  Dashboard", "home"); self._nav_btn("extract", "⚡  Single Extract", "extract")
-        self._nav_btn("batch", "📦  Batch Suite", "batch"); self._nav_btn("story", "🎞️  Storyboard", "story")
+        self._nav_btn("home", "🏠  Dashboard", "home")
+        self._nav_btn("extract", "⚡  Single Extract", "extract")
+        self._nav_btn("batch", "📦  Batch Suite", "batch")
+        self._nav_btn("story", "🎞️  Storyboard", "story")
+        
         ctk.CTkFrame(self.nav, fg_color="transparent", height=100).pack(fill="y", expand=True)
         self._nav_btn("settings", "⚙️  Preferences", "settings")
+        
         self.container = ctk.CTkFrame(self, fg_color="transparent"); self.container.grid(row=0, column=1, sticky="nsew")
         self.container.grid_rowconfigure(0, weight=1); self.container.grid_columnconfigure(0, weight=1)
 
+    def _init_views(self):
+        """Pre-initialize all views to maintain professional state persistence."""
+        self.views["home"] = HomeView(self.container, self)
+        self.views["extract"] = SingleFrameView(self.container, self)
+        self.views["batch"] = BatchView(self.container, self)
+        self.views["story"] = StoryboardView(self.container, self)
+
     def _nav_btn(self, id, text, tab_name):
-        btn = ctk.CTkButton(self.nav, text=text, height=50, corner_radius=10, anchor="w", fg_color="transparent", hover_color=Theme.CARD_BG, text_color=Theme.TEXT_DIM, font=ctk.CTkFont(size=13), command=lambda: self.switch_tab(tab_name))
+        btn = ctk.CTkButton(self.nav, text=text, height=50, corner_radius=10, 
+                            anchor="w", fg_color="transparent", hover_color=Theme.CARD_BG, 
+                            text_color=Theme.TEXT_DIM, font=ctk.CTkFont(size=13), 
+                            command=lambda t=tab_name: self.switch_tab(t))
         btn.pack(fill="x", padx=15, pady=5); self.btns[id] = btn
 
     def switch_tab(self, tab):
-        if self.current_view: self.current_view.destroy()
-        for k, v in self.btns.items(): v.configure(fg_color="transparent", text_color=Theme.TEXT_DIM)
-        if tab == "home":
-            self.current_view = HomeView(self.container, self); self.btns["home"].configure(fg_color=Theme.ACCENT, text_color="white")
-        elif tab == "extract":
-            self.current_view = SingleFrameView(self.container, self); self.btns["extract"].configure(fg_color=Theme.ACCENT, text_color="white")
-        elif tab == "batch":
-            self.current_view = BatchView(self.container, self); self.btns["batch"].configure(fg_color=Theme.ACCENT, text_color="white")
-        elif tab == "story":
-            self.current_view = StoryboardView(self.container, self); self.btns["story"].configure(fg_color=Theme.ACCENT, text_color="white")
-        elif tab == "settings": self.show_settings(); return
-        self.current_view.grid(row=0, column=0, sticky="nsew")
+        if tab == "settings":
+            self.show_settings()
+            return
+
+        # UI State reset
+        for k, v in self.btns.items():
+            v.configure(fg_color="transparent", text_color=Theme.TEXT_DIM)
+        
+        # Hide all, show one
+        for name, view in self.views.items():
+            if name == tab:
+                view.grid(row=0, column=0, sticky="nsew")
+                if tab in self.btns:
+                    self.btns[tab].configure(fg_color=Theme.ACCENT, text_color="white")
+            else:
+                view.grid_forget()
 
     def show_settings(self):
         win = ctk.CTkToplevel(self); win.title("Preferences"); win.geometry("540x550"); win.configure(fg_color=Theme.BG_DARK); win.transient(self); win.grab_set()
